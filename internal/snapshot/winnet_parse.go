@@ -1,6 +1,7 @@
 package snapshot
 
-// Windows parsers. No build tag, so their tests run on any platform.
+// Windows parsers. The file name deliberately avoids a _windows suffix,
+// which would make Go build it (and its tests) on Windows only.
 
 import (
 	"bytes"
@@ -20,13 +21,18 @@ $a = Get-NetAdapter | Select-Object Name,InterfaceDescription,PhysicalMediaType,
 $p = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' | Select-Object ProxyEnable,ProxyServer,AutoConfigURL
 @{routes=@($r); dns=@($d); adapters=@($a); proxy=$p} | ConvertTo-Json -Depth 4 -Compress`
 
-// list accepts a JSON array or a single object (PowerShell unwraps
-// one-element arrays in some versions).
+// list accepts a JSON array or a single value: PowerShell writes a
+// one-element array as the bare element (an object, or a string for
+// ServerAddresses). null becomes an empty list.
 type list[T any] []T
 
 func (l *list[T]) UnmarshalJSON(b []byte) error {
 	b = bytes.TrimSpace(b)
-	if len(b) > 0 && b[0] == '{' {
+	if bytes.Equal(b, []byte("null")) {
+		*l = nil
+		return nil
+	}
+	if len(b) > 0 && b[0] != '[' {
 		var one T
 		if err := json.Unmarshal(b, &one); err != nil {
 			return err
