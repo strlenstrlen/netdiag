@@ -72,6 +72,13 @@ func cmdWatch(args []string) int {
 		fmt.Printf("\n%s\n%s\n\n", s.bold("Watching the connection"), s.dim("Pinging the router and 1.1.1.1 / 8.8.8.8 every "+every.String()+". "+until))
 	}
 	res := watch.Run(ctx, watch.Options{
+		Progress: func(msg string) {
+			if live {
+				out.Lock()
+				fmt.Fprintf(os.Stdout, "\r\x1b[2K%s", s.dim(msg))
+				out.Unlock()
+			}
+		},
 		Interval: *every,
 		Duration: *dur,
 		OnEvent: func(e watch.Event, ended bool) {

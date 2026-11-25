@@ -21,8 +21,10 @@ type Options struct {
 	Duration time.Duration // 0 = until ctx is cancelled
 	Internet []string      // internet hosts to ping (default 1.1.1.1, 8.8.8.8)
 	// OnTick is called after every round with the running summary.
-	OnTick  func(t Tick, s Summary)
-	OnEvent func(e Event, ended bool)
+	OnTick func(t Tick, s Summary)
+	// Progress receives a status line during setup; it may be nil.
+	Progress func(string)
+	OnEvent  func(e Event, ended bool)
 }
 
 type DNSSample struct {
@@ -75,10 +77,8 @@ func Run(ctx context.Context, o Options) Results {
 	if len(o.Internet) == 0 {
 		o.Internet = []string{"1.1.1.1", "8.8.8.8"}
 	}
-	if o.Duration > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, o.Duration)
-		defer cancel()
+	if o.Progress != nil {
+		o.Progress("Checking which probes get answers…")
 	}
 	snap := snapshot.Collect(ctx)
 	r := Results{Started: time.Now(), IntervalMs: int(o.Interval.Milliseconds()), Internet: o.Internet, Snapshot: snap, Method: "icmp"}
@@ -87,28 +87,48 @@ func Run(ctx context.Context, o Options) Results {
 	// networks drop ping replies (common in clouds and offices) and some
 	// OSes refuse unprivileged ping; probing those by ping would look like
 	// a permanent outage.
+	// All targets are checked at once so setup stays short on silent networks.
 	var routerT *probeTarget
+	inetT := make([]probeTarget, len(o.Internet))
+	var pick sync.WaitGroup
 	if snap.DefaultRoute != nil && net.ParseIP(snap.DefaultRoute.Gateway) != nil {
 		gw := snap.DefaultRoute.Gateway
-		if t, ok := pickMethod(ctx, gw, []string{"53", "80", "443"}); ok {
-			routerT = &t
-			r.Router, r.RouterMethod = gw, t.method
-		} else {
-			r.RouterNote = "The router (" + gw + ") doesn't answer ping or TCP, so outages can't be split into local and upstream"
-		}
+		pick.Add(1)
+		go func() {
+			defer pick.Done()
+			if t, ok := pickMethod(ctx, gw, []string{"53", "80", "443"}); ok {
+				routerT = &t
+				r.Router, r.RouterMethod = gw, t.method
+			} else {
+				r.RouterNote = "The router (" + gw + ") doesn't answer ping or TCP, so outages can't be split into local and upstream"
+			}
+		}()
 	}
-	inetT := make([]probeTarget, len(o.Internet))
-	var methods []string
 	for i, h := range o.Internet {
-		t, ok := pickMethod(ctx, h, []string{"443"})
-		if !ok { // nothing answers yet (maybe offline right now): keep trying both
-			t = probeTarget{addr: h, method: "icmp", port: "443"}
-		}
-		inetT[i] = t
+		pick.Add(1)
+		go func() {
+			defer pick.Done()
+			t, ok := pickMethod(ctx, h, []string{"443"})
+			if !ok { // nothing answers yet (maybe offline right now)
+				t = probeTarget{addr: h, method: "icmp", port: "443"}
+			}
+			inetT[i] = t
+		}()
+	}
+	pick.Wait()
+	var methods []string
+	for _, t := range inetT {
 		methods = append(methods, t.method)
 	}
 	r.Method = strings.Join(methods, ",")
 
+	// The --for clock starts now, so setup never eats the watch time.
+	if o.Duration > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, o.Duration)
+		defer cancel()
+	}
+	r.Started = time.Now()
 	var mu sync.Mutex
 	det := &Detector{OnEvent: o.OnEvent, NoRouter: routerT == nil}
 	timeout := min(o.Interval*9/10, 2*time.Second)
@@ -225,12 +245,28 @@ type probeTarget struct{ addr, method, port string }
 
 // pickMethod returns ICMP if the host answers ping, else TCP on the first
 // port that answers (a refusal counts: the host is alive), else ok=false.
+// Ping and every port are tried at the same time; ping wins if it answers.
 func pickMethod(ctx context.Context, addr string, ports []string) (probeTarget, bool) {
-	if p := probe.Ping(ctx, addr, 2, 200*time.Millisecond, time.Second); p.OK() {
+	var wg sync.WaitGroup
+	var pingOK bool
+	alive := make([]bool, len(ports))
+	wg.Add(1 + len(ports))
+	go func() {
+		defer wg.Done()
+		pingOK = probe.Ping(ctx, addr, 2, 200*time.Millisecond, time.Second).OK()
+	}()
+	for i, port := range ports {
+		go func() {
+			defer wg.Done()
+			alive[i] = probe.TCPConnect(ctx, net.JoinHostPort(addr, port), 2*time.Second).HostAlive()
+		}()
+	}
+	wg.Wait()
+	if pingOK {
 		return probeTarget{addr: addr, method: "icmp"}, true
 	}
-	for _, port := range ports {
-		if probe.TCPConnect(ctx, net.JoinHostPort(addr, port), 2*time.Second).HostAlive() {
+	for i, port := range ports {
+		if alive[i] {
 			return probeTarget{addr: addr, method: "tcp", port: port}, true
 		}
 	}
