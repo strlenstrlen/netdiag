@@ -53,5 +53,8 @@ jobs:
           ./netdiag-ci view report.json --no-color > /dev/null; ok "view"
           ./netdiag-ci dns www.google.com --no-color; ok "dns"
           ./netdiag-ci site https://www.google.com/ --no-color; ok "site"
-          ./netdiag-ci watch --for 10s --no-report --no-color; ok "watch"
+          ./netdiag-ci watch --for 10s --no-report --no-color | tee watch.txt; ok "watch"
+          # A cloud runner's network is steady, so reported drops are almost
+          # certainly a probing bug (as when ping was silently blocked on Windows).
+          grep -q "NO DROPS" watch.txt || echo "::warning::watch reported trouble on a CI runner; check its probe selection"
           if [ "$RUNNER_OS" = "macOS" ]; then ./netdiag-ci path 1.1.1.1 --rounds 3 --no-color; ok "path"; fi

@@ -33,18 +33,20 @@ type DNSSample struct {
 }
 
 type Results struct {
-	Started    time.Time         `json:"started"`
-	Ended      time.Time         `json:"ended"`
-	IntervalMs int               `json:"interval_ms"`
-	Router     string            `json:"router,omitempty"`
-	Internet   []string          `json:"internet"`
-	Method     string            `json:"method"` // icmp or tcp
-	Snapshot   snapshot.Snapshot `json:"snapshot"`
-	Ticks      []Tick            `json:"ticks"`
-	DNS        []DNSSample       `json:"dns"`
-	States     []State           `json:"states"`
-	Events     []Event           `json:"events"`
-	Summary    Summary           `json:"summary"`
+	Started      time.Time         `json:"started"`
+	Ended        time.Time         `json:"ended"`
+	IntervalMs   int               `json:"interval_ms"`
+	Router       string            `json:"router,omitempty"`
+	RouterMethod string            `json:"router_method,omitempty"`
+	RouterNote   string            `json:"router_note,omitempty"`
+	Internet     []string          `json:"internet"`
+	Method       string            `json:"method"` // per internet target: icmp or tcp
+	Snapshot     snapshot.Snapshot `json:"snapshot"`
+	Ticks        []Tick            `json:"ticks"`
+	DNS          []DNSSample       `json:"dns"`
+	States       []State           `json:"states"`
+	Events       []Event           `json:"events"`
+	Summary      Summary           `json:"summary"`
 }
 
 type Summary struct {
@@ -80,23 +82,42 @@ func Run(ctx context.Context, o Options) Results {
 	}
 	snap := snapshot.Collect(ctx)
 	r := Results{Started: time.Now(), IntervalMs: int(o.Interval.Milliseconds()), Internet: o.Internet, Snapshot: snap, Method: "icmp"}
+
+	// Pick how to probe each target from what actually answers. Some
+	// networks drop ping replies (common in clouds and offices) and some
+	// OSes refuse unprivileged ping; probing those by ping would look like
+	// a permanent outage.
+	var routerT *probeTarget
 	if snap.DefaultRoute != nil && net.ParseIP(snap.DefaultRoute.Gateway) != nil {
-		r.Router = snap.DefaultRoute.Gateway
+		gw := snap.DefaultRoute.Gateway
+		if t, ok := pickMethod(ctx, gw, []string{"53", "80", "443"}); ok {
+			routerT = &t
+			r.Router, r.RouterMethod = gw, t.method
+		} else {
+			r.RouterNote = "The router (" + gw + ") doesn't answer ping or TCP, so outages can't be split into local and upstream"
+		}
 	}
-	// Fall back to TCP if this OS doesn't allow unprivileged ping.
-	if p := probe.Ping(ctx, o.Internet[0], 1, 0, time.Second); p.Unavailable {
-		r.Method = "tcp"
+	inetT := make([]probeTarget, len(o.Internet))
+	var methods []string
+	for i, h := range o.Internet {
+		t, ok := pickMethod(ctx, h, []string{"443"})
+		if !ok { // nothing answers yet (maybe offline right now): keep trying both
+			t = probeTarget{addr: h, method: "icmp", port: "443"}
+		}
+		inetT[i] = t
+		methods = append(methods, t.method)
 	}
+	r.Method = strings.Join(methods, ",")
 
 	var mu sync.Mutex
-	det := &Detector{OnEvent: o.OnEvent}
+	det := &Detector{OnEvent: o.OnEvent, NoRouter: routerT == nil}
 	timeout := min(o.Interval*9/10, 2*time.Second)
-	one := func(addr string, port string) *float64 {
+	one := func(t probeTarget) *float64 {
 		var p probe.PingResult
-		if r.Method == "tcp" {
-			p = probe.TCPPing(ctx, net.JoinHostPort(addr, port), 1, 0, timeout)
+		if t.method == "tcp" {
+			p = probe.TCPPing(ctx, net.JoinHostPort(t.addr, t.port), 1, 0, timeout)
 		} else {
-			p = probe.Ping(ctx, addr, 1, 0, timeout)
+			p = probe.Ping(ctx, t.addr, 1, 0, timeout)
 		}
 		if p.OK() {
 			v := p.RTTsMs[0]
@@ -154,14 +175,14 @@ func Run(ctx context.Context, o Options) Results {
 		var tick Tick
 		tick.At = at
 		var wg sync.WaitGroup
-		if r.Router != "" {
+		if routerT != nil {
 			wg.Add(1)
-			go func() { defer wg.Done(); tick.Router = one(r.Router, "53") }()
+			go func() { defer wg.Done(); tick.Router = one(*routerT) }()
 		}
 		results := make([]*float64, len(o.Internet))
-		for i, h := range o.Internet {
+		for i, t := range inetT {
 			wg.Add(1)
-			go func() { defer wg.Done(); results[i] = one(h, "443") }()
+			go func() { defer wg.Done(); results[i] = one(t) }()
 		}
 		wg.Wait()
 		if ctx.Err() != nil {
@@ -198,6 +219,22 @@ func Summarize(r Results) Summary {
 	r.Summary = summarize(r, r.Events)
 	r.Summary.Conclusion = Conclude(r)
 	return r.Summary
+}
+
+type probeTarget struct{ addr, method, port string }
+
+// pickMethod returns ICMP if the host answers ping, else TCP on the first
+// port that answers (a refusal counts: the host is alive), else ok=false.
+func pickMethod(ctx context.Context, addr string, ports []string) (probeTarget, bool) {
+	if p := probe.Ping(ctx, addr, 2, 200*time.Millisecond, time.Second); p.OK() {
+		return probeTarget{addr: addr, method: "icmp"}, true
+	}
+	for _, port := range ports {
+		if probe.TCPConnect(ctx, net.JoinHostPort(addr, port), 2*time.Second).HostAlive() {
+			return probeTarget{addr: addr, method: "tcp", port: port}, true
+		}
+	}
+	return probeTarget{}, false
 }
 
 func stateOf(s snapshot.Snapshot) State {
@@ -346,7 +383,14 @@ func Conclude(r Results) target.Conclusion {
 		"Check the modem's status lights or event log at the time of the drops",
 		"Restart the modem; if drops continue, send this report to your internet provider with the times listed",
 	}
+	if r.RouterNote != "" && s.Outages > 0 {
+		ev = append(ev, r.RouterNote)
+	}
 	switch {
+	case s.Outages > 0 && local == 0 && up == 0:
+		c = target.Conclusion{Status: "fail", Owner: "Wi-Fi, router or internet provider",
+			Headline: fmt.Sprintf("The connection dropped %d %s in %s", s.Outages, plural(s.Outages, "time", "times"), dur),
+			Evidence: ev, NextSteps: append(append([]string{}, localSteps[0]), upSteps...)}
 	case local > 0 && up > 0:
 		c = target.Conclusion{Status: "fail",
 			Headline: fmt.Sprintf("The connection dropped %d times in %s: %d on your Wi-Fi or local network, %d beyond your router", s.Outages, dur, local, up),

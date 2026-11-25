@@ -61,6 +61,9 @@ type Detector struct {
 	Events []Event
 	// OnEvent is called when an event starts and again when it ends.
 	OnEvent func(e Event, ended bool)
+	// NoRouter means the router isn't monitored, so outages and lag can't
+	// be attributed to the local network or beyond it.
+	NoRouter bool
 
 	recentInet   []float64 // last 60 internet replies, for the baseline
 	recentRouter []float64
@@ -152,6 +155,8 @@ func (d *Detector) Tick(t Tick) {
 			case d.wifiChanged:
 				d.outage.Cause = CauseWiFi
 				d.outage.Detail = "The Wi-Fi connection changed during the outage"
+			case d.NoRouter:
+				d.outage.Detail = "The router isn't monitored, so the location of the break is unknown"
 			case d.outTicks > 0 && float64(d.outRouter)/float64(d.outTicks) >= 0.5:
 				d.outage.Cause = CauseLocal
 				d.outage.Detail = "The router stopped answering too, so the break was on the Wi-Fi or local network"
@@ -211,6 +216,8 @@ func (d *Detector) closeLag(at time.Time) {
 	switch {
 	case d.wifiChanged:
 		d.lag.Cause = CauseWiFi
+	case d.NoRouter:
+		d.lag.Detail = "The router isn't monitored, so the location of the delay is unknown"
 	case d.lagTicks > 0 && float64(d.lagRouter)/float64(d.lagTicks) >= 0.5:
 		d.lag.Cause = CauseLocal
 		d.lag.Detail = "The router was slow too, so the delay was on the Wi-Fi or local network"
@@ -275,9 +282,12 @@ func (d *Detector) State(s State) {
 func (d *Detector) Finish(at time.Time) {
 	if d.outage != nil {
 		d.outage.End = at
-		d.outage.Cause = CauseUpstream
-		if d.outTicks > 0 && float64(d.outRouter)/float64(d.outTicks) >= 0.5 {
+		switch {
+		case d.NoRouter:
+		case d.outTicks > 0 && float64(d.outRouter)/float64(d.outTicks) >= 0.5:
 			d.outage.Cause = CauseLocal
+		default:
+			d.outage.Cause = CauseUpstream
 		}
 		d.outage.Title = fmt.Sprintf("Internet unreachable for %s (still down when monitoring stopped)", human(d.outage.Duration()))
 		d.Events = append(d.Events, *d.outage)

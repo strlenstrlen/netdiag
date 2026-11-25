@@ -857,6 +857,10 @@ func checks(f facts) []Check {
 		add("Router", st, r.Snapshot.DefaultRoute.Gateway+" · "+gatewaySummary(r))
 	case f.gwTCP:
 		add("Router", CheckPass, r.Snapshot.DefaultRoute.Gateway+" · answers on TCP (no ping)")
+	case f.inetAlive:
+		// Common on cloud, office and some ISP networks: the gateway ignores
+		// probes but forwards traffic fine.
+		add("Router", CheckSkip, r.Snapshot.DefaultRoute.Gateway+" · doesn't answer probes, but traffic passes through it")
 	default:
 		add("Router", CheckFail, r.Snapshot.DefaultRoute.Gateway+" · no response")
 	}

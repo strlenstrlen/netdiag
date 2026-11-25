@@ -155,3 +155,26 @@ func TestConclusion(t *testing.T) {
 		t.Errorf("clean run: %+v", c)
 	}
 }
+
+func TestOutageWithoutRouterHasNoGuessedCause(t *testing.T) {
+	d := &Detector{NoRouter: true}
+	for i, c := range strings.Repeat(".", 15) + "xxxx" + "..." {
+		tk := Tick{At: t0.Add(time.Duration(i) * time.Second), Inet: ms(15)} // Router never measured
+		if c == 'x' {
+			tk.Inet = nil
+		}
+		d.Tick(tk)
+	}
+	e := only(t, d, "outage")
+	if e.Cause != "" || !strings.Contains(e.Detail, "isn't monitored") {
+		t.Errorf("got cause %q detail %q", e.Cause, e.Detail)
+	}
+	r := Results{IntervalMs: 1000, Events: d.Events, RouterNote: "The router doesn't answer"}
+	for i := 0; i < 22; i++ {
+		r.Ticks = append(r.Ticks, Tick{At: t0.Add(time.Duration(i) * time.Second), Inet: ms(15)})
+	}
+	r.Summary = summarize(r, r.Events)
+	if c := Conclude(r); strings.Contains(c.Headline, "Wi-Fi") || strings.Contains(c.Headline, "beyond") {
+		t.Errorf("headline guesses a location: %q", c.Headline)
+	}
+}

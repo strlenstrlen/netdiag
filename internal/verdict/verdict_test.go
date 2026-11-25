@@ -360,3 +360,19 @@ func TestSlowSymptomAddsScopeNote(t *testing.T) {
 		t.Error("slow symptom on a healthy network should explain that bandwidth isn't measured yet")
 	}
 }
+
+func TestSilentRouterIsNotAFailure(t *testing.T) {
+	// Seen on cloud CI runners: the gateway answers nothing, the internet works.
+	r := healthy()
+	failPing(&r.GatewayPing)
+	failTCP(r.GatewayTCP)
+	v := Evaluate(r)
+	for _, c := range v.Checks {
+		if c.Name == "Router" && c.Status == CheckFail {
+			t.Errorf("router row = %+v while verdict is %s", c, v.Status)
+		}
+	}
+	if v.Status != StatusOK {
+		t.Errorf("status = %s", v.Status)
+	}
+}
