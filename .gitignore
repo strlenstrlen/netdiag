@@ -1,0 +1,7 @@
+bin/
+.DS_Store
+# Reports netdiag saves (they contain network details)
+netdiag-report-*.html
+netdiag-report-*.json
+netdiag-watch-*.html
+netdiag-watch-*.json
