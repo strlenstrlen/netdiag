@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Use the minimum Go version from go.mod, so CI catches newer-only APIs.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        if: runner.os != 'Windows'
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: Build
+        shell: bash
+        run: go build -o netdiag-ci ./cmd/netdiag
+
+      # Run the real tool on the runner's network: the only place the Linux
+      # and Windows adapters actually execute. netdiag exits 0–2 for
+      # all clear / issues / problem found; 3 or a crash fails the job.
+      # Cloud runners often block ping, which exercises the TCP fallbacks.
+      - name: Smoke test
+        shell: bash
+        run: |
+          set +e
+          ok() { code=$?; echo "::notice::$1 exited $code"; [ "$code" -le 2 ] || exit 1; }
+          ./netdiag-ci --quick --no-prompt --no-report --no-color -v; ok "triage --quick"
+          ./netdiag-ci --quick --no-prompt --no-report --json > report.json; ok "triage --json"
+          ./netdiag-ci view report.json --no-color > /dev/null; ok "view"
+          ./netdiag-ci dns www.google.com --no-color; ok "dns"
+          ./netdiag-ci site https://www.google.com/ --no-color; ok "site"
+          ./netdiag-ci watch --for 10s --no-report --no-color; ok "watch"
+          if [ "$RUNNER_OS" = "macOS" ]; then ./netdiag-ci path 1.1.1.1 --rounds 3 --no-color; ok "path"; fi

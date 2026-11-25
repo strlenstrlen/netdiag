@@ -12,9 +12,8 @@ import (
 	"github.com/strlenstrlen/netdiag/internal/probe"
 	"github.com/strlenstrlen/netdiag/internal/quality"
 	"github.com/strlenstrlen/netdiag/internal/verdict"
+	"github.com/strlenstrlen/netdiag/internal/version"
 )
-
-const Version = "0.1.0"
 
 // Document is the JSON report: everything needed to re-render or analyze a
 // run on another machine.
@@ -28,7 +27,7 @@ type Document struct {
 }
 
 func NewDocument(r ladder.Results, v verdict.Verdict) Document {
-	return Document{Tool: "netdiag", Version: Version, GeneratedAt: time.Now(), Verdict: v, Results: r}
+	return Document{Tool: "netdiag", Version: version.Version, GeneratedAt: time.Now(), Verdict: v, Results: r}
 }
 
 func WriteJSON(w io.Writer, d Document) error {

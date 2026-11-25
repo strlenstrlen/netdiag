@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/strlenstrlen/netdiag/internal/version"
 )
 
 // HTTPTiming breaks one fresh HTTPS request into phases, answering "where
@@ -60,7 +62,7 @@ func HTTPTime(ctx context.Context, rawURL string, timeout time.Duration) HTTPTim
 		t.Err = err.Error()
 		return t
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", version.UserAgent())
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/strlenstrlen/netdiag/internal/version"
 )
 
 func ms(d time.Duration) float64 { return round1(float64(d.Microseconds()) / 1000) }
@@ -176,8 +178,6 @@ func directTransport(timeout time.Duration, tlsCfg *tls.Config) *http.Transport 
 
 func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
-const userAgent = "netdiag/0.1 (+network triage)"
-
 func CaptiveCheck(ctx context.Context, rawURL string, expectStatus int, expectBody string, timeout time.Duration) CaptiveResult {
 	r := CaptiveResult{URL: rawURL}
 	client := &http.Client{Transport: directTransport(timeout, nil), CheckRedirect: noRedirect, Timeout: timeout * 2}
@@ -186,7 +186,7 @@ func CaptiveCheck(ctx context.Context, rawURL string, expectStatus int, expectBo
 		r.Err = err.Error()
 		return r
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", version.UserAgent())
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
@@ -229,7 +229,7 @@ func HTTPSCheck(ctx context.Context, rawURL string, timeout time.Duration) HTTPS
 	r.ByIP = net.ParseIP(u.Hostname()) != nil
 	client := &http.Client{Transport: directTransport(timeout, nil), CheckRedirect: noRedirect, Timeout: timeout * 2}
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", version.UserAgent())
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {

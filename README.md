@@ -1,5 +1,7 @@
 # netdiag
 
+[![CI](https://github.com/strlenstrlen/netdiag/actions/workflows/ci.yml/badge.svg)](https://github.com/strlenstrlen/netdiag/actions/workflows/ci.yml)
+
 Network triage for vague complaints like "the internet is slow" or "the network is broken."
 Run it on the affected machine while the problem is happening. It reports **where the fault is,
 who can fix it, how confident it is, and what to do next**.
@@ -19,7 +21,17 @@ Why:
 
 ## Install
 
-With Go 1.23 or newer:
+Download the archive for your system from [Releases](https://github.com/strlenstrlen/netdiag/releases)
+(macOS universal, Linux and Windows on x86-64 and ARM64; checksums in `checksums.txt`), unpack it and run `netdiag`.
+
+The macOS binary isn't signed yet, so a copy downloaded in a browser is blocked by Gatekeeper. Clear the
+download flag once:
+
+```bash
+xattr -d com.apple.quarantine ./netdiag
+```
+
+Or build it yourself with Go 1.23 or newer:
 
 ```bash
 go install github.com/strlenstrlen/netdiag/cmd/netdiag@latest
@@ -157,7 +169,8 @@ Cloudflare rate-limits a connection after many back-to-back tests (HTTP 429); th
 4. ~~Self-contained HTML report for end users to send, re-openable with `--from`~~
 5. ~~Expert subcommands (`site`, `dns`, `path`, `view`), watch mode, Windows adapters~~
 
-Not yet verified on real hardware: everything on Linux and Windows (built and unit-tested only).
+CI runs the tests and a live smoke test (triage, `view`, `dns`, `site`, `watch`; `path` on macOS) on
+macOS, Linux and Windows runners. Desktop Linux and Windows machines haven't been tested beyond that.
 Next candidates: `path` on Linux (IP_RECVERR) and Windows, IPv6 ping on Windows, code signing and notarization for distribution.
 
 ## License

@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/strlenstrlen/netdiag/internal/version"
 )
 
 const ndt7Proto = "net.measurementlab.ndt.v7"
@@ -37,7 +39,7 @@ func ndt7Locate(ctx context.Context, locateURL string, timeout time.Duration) ([
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, locateURL, nil)
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", version.UserAgent())
 	resp, err := speedClient(timeout).Do(req)
 	if err != nil {
 		return nil, err

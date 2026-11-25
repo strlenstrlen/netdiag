@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/strlenstrlen/netdiag/internal/version"
 )
 
 // Cloudflare's public speed-test endpoints (the ones speed.cloudflare.com
@@ -19,7 +21,6 @@ import (
 const (
 	cfDownChunk = 25_000_000
 	cfUpChunk   = 10_000_000
-	userAgent   = "netdiag/0.1.0 (+network triage)"
 )
 
 func speedClient(timeout time.Duration) *http.Client {
@@ -64,7 +65,7 @@ func streams(ctx context.Context, n int, m *meter, fn func(ctx context.Context, 
 func cloudflareDownload(ctx context.Context, url string, n int, m *meter, capBytes int64, stop context.CancelFunc) error {
 	return streams(ctx, n, m, func(ctx context.Context, c *http.Client) error {
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf(url, cfDownChunk), nil)
-		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("User-Agent", version.UserAgent())
 		resp, err := c.Do(req)
 		if err != nil {
 			return err
@@ -98,7 +99,7 @@ func cloudflareUpload(ctx context.Context, url string, n int, m *meter, capBytes
 		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 		req.ContentLength = cfUpChunk
 		req.Header.Set("Content-Type", "application/octet-stream")
-		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("User-Agent", version.UserAgent())
 		resp, err := c.Do(req)
 		if err != nil {
 			return err

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/strlenstrlen/netdiag/internal/probe"
+	"github.com/strlenstrlen/netdiag/internal/version"
 	"github.com/strlenstrlen/netdiag/internal/watch"
 )
 
@@ -32,7 +33,7 @@ type WatchDocument struct {
 }
 
 func NewWatchDocument(r watch.Results) WatchDocument {
-	return WatchDocument{Tool: ToolWatch, Version: Version, GeneratedAt: time.Now(), Results: r}
+	return WatchDocument{Tool: ToolWatch, Version: version.Version, GeneratedAt: time.Now(), Results: r}
 }
 
 func RedactWatch(d *WatchDocument) {

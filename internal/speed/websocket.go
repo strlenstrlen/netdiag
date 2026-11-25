@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/strlenstrlen/netdiag/internal/version"
 )
 
 const (
@@ -67,7 +69,7 @@ func wsDial(ctx context.Context, rawURL, subprotocol string, timeout time.Durati
 		"Sec-Websocket-Key":      {key},
 		"Sec-Websocket-Version":  {"13"},
 		"Sec-Websocket-Protocol": {subprotocol},
-		"User-Agent":             {userAgent},
+		"User-Agent":             {version.UserAgent()},
 	}}
 	_ = c.SetDeadline(time.Now().Add(timeout))
 	if err := req.Write(c); err != nil {

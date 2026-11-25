@@ -24,6 +24,7 @@ import (
 	"github.com/strlenstrlen/netdiag/internal/snapshot"
 	"github.com/strlenstrlen/netdiag/internal/speed"
 	"github.com/strlenstrlen/netdiag/internal/verdict"
+	"github.com/strlenstrlen/netdiag/internal/version"
 )
 
 // Exit codes let scripts branch on the outcome.
@@ -77,7 +78,7 @@ func dispatch(args []string) int {
 }
 
 func usage(fs *flag.FlagSet) {
-	fmt.Fprintf(os.Stderr, "netdiag %s: find out why the network isn't working\n\n", report.Version)
+	fmt.Fprintf(os.Stderr, "netdiag %s: find out why the network isn't working\n\n", version.Version)
 	fmt.Fprintf(os.Stderr, "Usage:\n  netdiag %-26s %s\n", "[flags]", "full triage: connectivity, responsiveness, speed")
 	for _, c := range commands {
 		fmt.Fprintf(os.Stderr, "  netdiag %-26s %s\n", c.usage, c.help)
@@ -110,7 +111,7 @@ func runTriage(args []string) int {
 		planUp     = flag.Float64("plan-up", 0, "your plan's upload speed in Mbps, to compare against")
 		noColor    = flag.Bool("no-color", false, "disable colored output")
 		configPath = flag.String("config", "", "JSON file overriding the default test endpoints")
-		version    = flag.Bool("version", false, "print version and exit")
+		showVer    = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Usage = func() { usage(flag) }
 	if err := flag.Parse(args); err != nil {
@@ -120,8 +121,8 @@ func runTriage(args []string) int {
 		return exitError
 	}
 
-	if *version {
-		fmt.Println("netdiag", report.Version)
+	if *showVer {
+		fmt.Println("netdiag", version.Version)
 		return exitOK
 	}
 	if !verdict.ValidSymptom(*symptom) {
