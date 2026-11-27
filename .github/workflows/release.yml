@@ -15,9 +15,10 @@ jobs:
     # macOS builds need cgo for CoreWLAN (Wi-Fi stats), so they build on a Mac.
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
+          cache: false # no dependencies (no go.sum) to cache
           go-version: stable
       - name: Build universal binary
         run: |
@@ -32,7 +33,7 @@ jobs:
           cp README.md LICENSE pkg/
           ./pkg/netdiag --version
           tar -czf "dist/netdiag_${VERSION}_macos_universal.tar.gz" -C pkg .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist-macos
           path: dist/*
@@ -40,9 +41,10 @@ jobs:
   others:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
+          cache: false # no dependencies (no go.sum) to cache
           go-version: stable
       - name: Build Linux and Windows binaries
         run: |
@@ -64,7 +66,7 @@ jobs:
             fi
           done
           ls -la dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist-others
           path: dist/*
@@ -75,14 +77,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: dist-*
           merge-multiple: true
           path: dist
       - name: Checksums
         run: cd dist && sha256sum * > checksums.txt && cat checksums.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: github.ref_type != 'tag'
         with:
           name: release-preview

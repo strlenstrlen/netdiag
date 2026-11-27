@@ -18,11 +18,12 @@ jobs:
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Use the minimum Go version from go.mod, so CI catches newer-only APIs.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
+          cache: false # no dependencies (no go.sum) to cache
           go-version-file: go.mod
 
       - name: Check formatting
